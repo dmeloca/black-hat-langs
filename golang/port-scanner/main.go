@@ -6,20 +6,55 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 )
 
+func inc(ip net.IP) {
+	for j := len(ip) - 1; j >= 0; j-- {
+		ip[j]++
+		if ip[j] > 0 {
+			break
+		}
+	}
+}
+
 func scan(host string, port string, verbose bool) {
 	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), time.Second)
+
 	if err != nil {
 		if verbose {
 			fmt.Printf("|- Port %s -> %v\n", port, err)
 		}
+		return
 	}
-	if conn != nil {
-		defer conn.Close()
-		fmt.Printf("|- Open port on %s\n", port)
+	defer conn.Close()
+	fmt.Printf("|- Open port on %s:%s\n", host, port)
+}
+
+func worker(host string, verbose bool, jobs <-chan int, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	for port := range jobs {
+		scan(host, strconv.Itoa(port), verbose)
 	}
+}
+
+func runWorkerPool(host string, end int, verbose bool) {
+	const workerCount = 100
+
+	jobs := make(chan int)
+	var wg sync.WaitGroup
+	for range workerCount {
+		wg.Add(1)
+		go worker(host, verbose, jobs, &wg)
+	}
+	for port := 1; port <= end; port++ {
+		jobs <- port
+	}
+	close(jobs)
+	wg.Wait()
 }
 
 func main() {
@@ -44,7 +79,27 @@ func main() {
 	fmt.Println("[!] Starting scan on", host)
 	fmt.Println("[!] Ports to scan:", *end)
 
-	for port := 1; port <= *end; port++ {
-		scan(host, strconv.Itoa(port), *verbose)
+	if strings.Contains(host, "/") {
+
+		fmt.Println("[!] Running scan in CIDR mode")
+
+		ip, ipNet, err := net.ParseCIDR(host)
+		if err != nil {
+			if *verbose {
+				fmt.Println(err)
+			}
+			os.Exit(1)
+		}
+
+		for ip := ip.Mask(ipNet.Mask); ipNet.Contains(ip); inc(ip) {
+			fmt.Printf("[!] Scanning %s\n", ip.String())
+			runWorkerPool(ip.String(), *end, *verbose)
+		}
+
+	} else {
+
+		fmt.Println("[!] Running scan in TARGET mode")
+		runWorkerPool(host, *end, *verbose)
+
 	}
 }
