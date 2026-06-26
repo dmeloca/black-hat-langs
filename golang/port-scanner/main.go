@@ -20,6 +20,20 @@ func inc(ip net.IP) {
 	}
 }
 
+func bannerGrab(conn net.Conn) string {
+	conn.SetReadDeadline(time.Now().Add(time.Second))
+
+	buffer := make([]byte, 1024)
+
+	n, err := conn.Read(buffer)
+	if err != nil {
+		return "[-] No banner"
+	}
+
+	banner := string(buffer[:n])
+	return banner
+}
+
 func scan(host string, port string, verbose bool) {
 	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), time.Second)
 
@@ -29,8 +43,13 @@ func scan(host string, port string, verbose bool) {
 		}
 		return
 	}
-	defer conn.Close()
 	fmt.Printf("|- Open port on %s:%s\n", host, port)
+	if port == "443" || port == "80" {
+		return
+	}
+	defer conn.Close()
+	fmt.Println("\t|- Banner: ", bannerGrab(conn))
+
 }
 
 func worker(host string, verbose bool, jobs <-chan int, wg *sync.WaitGroup) {
@@ -42,7 +61,7 @@ func worker(host string, verbose bool, jobs <-chan int, wg *sync.WaitGroup) {
 }
 
 func runWorkerPool(host string, end int, verbose bool) {
-	const workerCount = 100
+	const workerCount = 2000
 
 	jobs := make(chan int)
 	var wg sync.WaitGroup
