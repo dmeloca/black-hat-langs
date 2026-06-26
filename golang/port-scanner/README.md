@@ -1,4 +1,4 @@
 # Tasks
-- [ ] CIDR Support
+- [x] CIDR Support
 - [ ] Concurrent Workers
 - [ ] Sevice banner Grabbing
